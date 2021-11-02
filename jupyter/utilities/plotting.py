@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 import os
-
+from matplotlib.ticker import ScalarFormatter, FormatStrFormatter
 
 def all_electrode_curves(v, cap, dqdu, ax, ax2, electrode_response=None, solid_line=True, error_bar_value=None, 
                          text_x_loc=None, error_bar_x_vloc=None, error_bar_x_hloc=None):
@@ -82,17 +82,17 @@ def all_electrode_curves(v, cap, dqdu, ax, ax2, electrode_response=None, solid_l
 
         return ax, ax2
 
-def plot_parameters_bootstrap(bootstrap_params, fit_params, electrode, lines=False):
+def plot_parameters_bootstrap(bootstrap_params, electrode, lines=False):
     """
     Takes all bootstrapped parameters and the parameters from the evenly-spaced fit (fit_params) 
     and plots the histograms of each parameter.
 
     Parameters:
     bootstrap_params: All the bootstrap parameters
-    fit_params: Parameters from the evenly-spaced fit
     electrode: 'pos' or 'neg'
-    lines: If True, will draw a solid vertical line at the mean of the histogram, and a dashed line
-           at the value from the evenly-spaced fit.
+    lines: If True, will draw a solid vertical line at the median of the histogram, and dashed lines
+           at the 5th and 95th percentile of the values, denoting the limits of the 90% confidence
+           interval.
 
     """
     fig = plt.figure(figsize = (9, 15))
@@ -126,13 +126,16 @@ def plot_parameters_bootstrap(bootstrap_params, fit_params, electrode, lines=Fal
     else:
         raise ValueError
 
-
     for ax in U0_plots:
         bin_count, bin_values, patch = ax.hist(bootstrap_params[:,count_U0], bins = 50)
         U0_modes.append(bin_values[np.argmax(bin_count)])
         if lines==True:
-            ax.axvline(x=bootstrap_params[:,count_U0].mean(), color='k')
-            ax.axvline(x=fit_params[count_U0], color='k', ls=':')
+            lower_percentile = np.percentile(bootstrap_params[:,count_U0], 5)
+            upper_percentile = np.percentile(bootstrap_params[:,count_U0], 95)
+            ax.plot((lower_percentile, lower_percentile), (2.25*bin_count.max()/3, 1000), color='k', ls=':')
+            ax.plot((upper_percentile, upper_percentile), (2.25*bin_count.max()/3, 1000), color='k', ls=':')
+            ax.axvline(x=np.median(bootstrap_params[:,count_U0]), color='k')
+            ax.set_ylim(0, bin_count.max()*1.1)
         ax.set_xlabel('U0')
         ax.xaxis.set_major_formatter(FormatStrFormatter('%.3f'))
         count_U0 += 3
@@ -141,8 +144,12 @@ def plot_parameters_bootstrap(bootstrap_params, fit_params, electrode, lines=Fal
         bin_count, bin_values, patch = ax.hist(bootstrap_params[:,count_Qj], bins = 50)
         Qj_modes.append(bin_values[np.argmax(bin_count)])
         if lines==True:
-            ax.axvline(x=bootstrap_params[:,count_Qj].mean(), color='k')
-            ax.axvline(x=fit_params[count_Qj], color='k', ls=':')
+            lower_percentile = np.percentile(bootstrap_params[:,count_Qj], 5)
+            upper_percentile = np.percentile(bootstrap_params[:,count_Qj], 95)
+            ax.plot((lower_percentile, lower_percentile), (2.25*bin_count.max()/3, 1000), color='k', ls=':')
+            ax.plot((upper_percentile, upper_percentile), (2.25*bin_count.max()/3, 1000), color='k', ls=':')
+            ax.axvline(x=np.median(bootstrap_params[:,count_Qj]), color='k')
+            ax.set_ylim(0, bin_count.max()*1.1)
         ax.set_xlabel('Qj (Ahr)')
         ax.xaxis.set_major_formatter(FormatStrFormatter('%.3f'))
         count_Qj += 3
@@ -151,8 +158,12 @@ def plot_parameters_bootstrap(bootstrap_params, fit_params, electrode, lines=Fal
         bin_count, bin_values, patch = ax.hist(bootstrap_params[:,count_Wj], bins = 50)
         Wj_modes.append(bin_values[np.argmax(bin_count)])
         if lines==True:
-            ax.axvline(x=bootstrap_params[:,count_Wj].mean(), color='k')
-            ax.axvline(x=fit_params[count_Wj], color='k', ls=':')
+            lower_percentile = np.percentile(bootstrap_params[:,count_Wj], 5)
+            upper_percentile = np.percentile(bootstrap_params[:,count_Wj], 95)
+            ax.plot((lower_percentile, lower_percentile), (2.25*bin_count.max()/3, 1000), color='k', ls=':')
+            ax.plot((upper_percentile, upper_percentile), (2.25*bin_count.max()/3, 1000), color='k', ls=':')
+            ax.axvline(x=np.median(bootstrap_params[:,count_Wj]), color='k')
+            ax.set_ylim(0, bin_count.max()*1.1)
         ax.set_xlabel('Wj')
         ax.xaxis.set_major_formatter(FormatStrFormatter('%.3f'))
         count_Wj += 3

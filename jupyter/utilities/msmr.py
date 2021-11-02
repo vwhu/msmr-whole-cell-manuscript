@@ -13,7 +13,7 @@ from scipy.interpolate import interp1d
 from scipy.signal import savgol_filter as sf
 from scipy.stats import rv_histogram
 
-def load_experiment_data(filepath, constant_current, timestep, sf_window_length, interpolated_voltage_range):
+def load_experiment_data(filepath, constant_current, timestep, sf_window_length, interpolated_voltage_range, charge=True):
 
     """
     Loads low-current experimental data and calculates the differential capacity and differential 
@@ -26,6 +26,8 @@ def load_experiment_data(filepath, constant_current, timestep, sf_window_length,
     timestep: (float or int) Time step in between data collection in seconds
     sf_window_length: (int) Window length for the Savitzy Golay Filter (must be an odd number)
     interpolated_voltage_range: (tuple) Interpolated voltage range to be selected for optimizing
+    charge: (boolean) default = True. If False, the voltage and currents will be reversed so that
+    it looks similarly to the capacity-voltage profile of the charge step.
 
     Returns:
 
@@ -39,14 +41,20 @@ def load_experiment_data(filepath, constant_current, timestep, sf_window_length,
     """
 
     data = pd.read_csv(filepath)
-    voltage = np.array(data['Voltage(V)'])
-    current = np.array(data['Current(A)'])
     capacity = np.array(data['Capacity(Ah)'])
     time = np.array(data['StepTime(s)'])
+    if charge == True:
+        voltage = np.array(data['Voltage(V)'])
+        current = np.array(data['Current(A)'])
+    elif charge == False:
+        voltage = np.flip(np.array(data['Voltage(V)']))
+        current = np.flip(np.array(data['Current(A)']))
     
-    dudt = sf(voltage, window_length = sf_window_length, deriv = 1, delta = timestep, polyorder = 3)
+    # Calculating the derivative using a Savitzy-Golay Filter
+    dudt = sf(voltage, window_length = sf_window_length, deriv = 1, delta = timestep, polyorder = 3) 
     dudq = dudt / (constant_current/3600)
     
+    # Interpolation
     f_data_cap_interp = interp1d(voltage, capacity)
     f_data_dudq_interp = interp1d(voltage, dudq)
     
@@ -75,7 +83,7 @@ def individual_reactions(U, U0, Xj, w, T):
 
 
     """
-    R, F = 8.314, 96485
+    R, F = 8.314, 96485 # Gas constant, Faraday's constant
     f = F/(R*T)
     xj = Xj/(1 + np.exp(f*(U-U0)/w))
     
@@ -86,15 +94,25 @@ def individual_reactions(U, U0, Xj, w, T):
     
     return xj, dxjdu
 
-def electrode_response(parameter_matrix, T, min_volt, max_volt, number_of_rxns):
+def electrode_response(parameter_matrix, T, min_volt, max_volt, number_of_rxns, points=1000):
     """
     Wraps the individual solver and creates the cumulative OCV and dx/dU curve or dQ/dU. 
     The parameter matrix holds the Uo, Xj or Qj, and wj term for each of the 
     individual reactions, respectively.
+
+    parameter_matrix: (1-D Array) Array of parameters for the MSMR model, that follow the repeating order,  
+    standard electrode potential (U), lithium content or capacity (Xj or Qj), and thermodynamic factor
+    (omega). parameter_matrix should be equal to the number_of_rxns * 3.
+    T: (float) Temperature
+    min_volt: (float) Minimum voltage for the MSMR model to solve
+    max_volt: (float) Maximum voltage for the MSMR model to solve
+    number_of_rxns: (int) Number of reactions
+    points: (int) Number of points per volt
+
     """
     
     # Initialize the matrix with the first entry
-    voltage = np.linspace(min_volt,max_volt, int((max_volt-min_volt)*1000)+1)
+    voltage = np.linspace(min_volt, max_volt, int((max_volt-min_volt)*points)+1)
     host_xj, host_dxjdu = individual_reactions(U=voltage, 
                                                U0=parameter_matrix[0], 
                                                Xj=parameter_matrix[1], 
@@ -132,7 +150,7 @@ def whole_cell(parameter_matrix,
 
     Parameters
 
-    parameter_matrix: (N,) A 1-D array of all parameter values of Uj, Qj or Xj, and wj for both parameters
+    parameter_matrix: (N,) A 1-D array of all parameter values of Uj, Qj or Xj, and wj for both electrodes
     temp: (int or float) Temperature
     nor_pos: (int) Number of reactions in the positive electrode. Helps determine how many parameters in
              the parameter_matrix are those of the positive electrde.
@@ -166,7 +184,6 @@ def whole_cell(parameter_matrix,
     neg_dqdu_interp: Negative Electrode Differential Capacity
 
     """
-
 
     int_points = 500
     
@@ -394,6 +411,13 @@ def rmse(data_y, guess_y, guess_x, data_x, x_interp):
 
     """
     Calculates root mean squared error between two datasets by ensuring that they are calculated along the same x-values
+    
+    data_x: (1-D array) Experimental data of independent variable
+    data_y: (1-D array) Experimental data of dependent variable
+    guess_x: (1-D array) Model data of independent variable
+    guess_y: (1-D array) Model data of dependent variable
+    x_interp: (1-D array) Points along the x-axis to compare the experimental and model values to
+
 
     """
 
@@ -418,6 +442,12 @@ def mae(data_y, guess_y, guess_x, data_x, x_interp):
     """
     Calculates mean absolute error between two datasets by ensuring that they are calculated along the same x-values
     
+    data_x: (1-D array) Experimental data of independent variable
+    data_y: (1-D array) Experimental data of dependent variable
+    guess_x: (1-D array) Model data of independent variable
+    guess_y: (1-D array) Model data of dependent variable
+    x_interp: (1-D array) Points along the x-axis to compare the experimental and model values to
+
     """
 
     guess_interp = interp1d(guess_x, guess_y, fill_value='extrapolate') # Gets interpolation ranges for guess x and guess y
@@ -436,6 +466,26 @@ def mae(data_y, guess_y, guess_x, data_x, x_interp):
     error = (np.sum(abs(data_interp_y - guess_interp_y))/len(data_interp_y))
 
     return error
+
+def percent_residuals(data_y, guess_y, guess_x, data_x, x_interp):
+    """
+    Calculates the residuals (in %) between two datasets by ensuring that they are calculated along the same x-values
+    
+    data_x: (1-D array) Experimental data of independent variable
+    data_y: (1-D array) Experimental data of dependent variable
+    guess_x: (1-D array) Model data of independent variable
+    guess_y: (1-D array) Model data of dependent variable
+    x_interp: (1-D array) Points along the x-axis to compare the experimental and model values to
+
+    """
+
+    guess_interp = interp1d(guess_x, guess_y, fill_value='extrapolate') # Gets interpolation ranges for guess x and guess y
+    guess_interp_y = guess_interp(x_interp) # Gives you interpolated values of the guess y in the same as data's x
+    
+    data_interp = interp1d(data_x, data_y, fill_value = 'extrapolate')
+    data_interp_y = data_interp(x_interp)
+    
+    return 100*((data_interp_y - guess_interp_y)/data_interp_y)
 
 def pos_li_constraint(parameter_matrix,
                       volt_range, cap_data, dudq_data,
