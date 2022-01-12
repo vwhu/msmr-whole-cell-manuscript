@@ -1,180 +1,155 @@
+import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 import os
+import utilities.msmr as msmr
+
 from matplotlib.ticker import ScalarFormatter, FormatStrFormatter
 
-def all_electrode_curves(v, cap, dqdu, ax, ax2, electrode_response=None, solid_line=True, error_bar_value=None, 
-                         text_x_loc=None, error_bar_x_vloc=None, error_bar_x_hloc=None):
+def all_electrode_curves(vrange, params, T, nor, ax, ax2, electrode_response=True, solid_line=True, error_bar_value=None, 
+                          text_x_loc=None, error_bar_x_vloc=None, error_bar_x_hloc=None):
     """
     Takes a dictionary of capacity and dqdu data for calculated individual reactions and plot them
     all along the same voltage (v) axis. If a whole electrode response is given, this function can be used to
     offset the dqdu response and give a scale bar instead.
 
     Parameters:
-    v: Array of Voltages used to calculate all the MSMR results
-    cap: Dictionary of capacity or xj values
-    dqdu: Dictionary of differential capacity or dxj/du values.
+    vrange: Array of voltages used to calculate all the MSMR results
+    params: 1D array of electrode parameters
+    T: temperature
+    nor: number of reactions in electrode
+    ax: Axis for Potential vs Capacity or X plot
+    ax2: Axis for Potential vs dQdU or dXdU plot
 
     """
+    # Plotting each individual reaction first
+    if electrode_response == True:
+        whole_response = msmr.electrode_response(params, T, vrange.min(), vrange.max(), nor)
+        dqdu_offset = abs(whole_response[2]).max()
+        text_y_loc = (-whole_response[2]+dqdu_offset).max() - (error_bar_value/2) * 1.25
+        
+        for i in range(0,nor):
+            cap, dqdu = msmr.individual_reactions(vrange, params[0+(i*3)], params[1+(i*3)], params[2+(i*3)], T)
+            if electrode_response == True:
+                if solid_line == True:
+                    ax.plot(vrange, cap, label = 'j = {}'.format(i))
+                    ax.plot(whole_response[0], whole_response[1], label = 'Whole Response', color='k')
+                    ax2.plot(vrange, -dqdu, label = 'j = {}'.format(i))
+                    ax2.plot(whole_response[0], -whole_response[2] + dqdu_offset, label = 'Whole Response', color='k')
 
-
-    if electrode_response is not None:
-        for i in cap.keys():
-            if solid_line == True:
-                ax.plot(v, cap[i], label = 'j = {}'.format(i))
-            elif solid_line == False:
-                ax.plot(v, cap[i], label = 'j = {}'.format(i), ls='--')
-
-        if solid_line == True:
-            ax.plot(electrode_response[0], electrode_response[1], label = 'Whole Pos Response', color='k')
-        elif solid_line == False:
-            ax.plot(electrode_response[0], electrode_response[1], label = 'Whole Pos Response', color='k', ls= '--')
+                elif solid_line == False:
+                    ax.plot(vrange, cap, label = 'j = {}'.format(i), ls='--')
+                    ax.plot(whole_response[0], whole_response[1], label = 'Whole Response', color='k', ls= '--')
+                    ax2.plot(vrange, -dqdu, label = 'j = {}'.format(i), ls = '--')
+                    ax2.plot(whole_response[0], -whole_response[2] + dqdu_offset, label = 'Whole Response', color='k', ls='--')
 
         ax.set_ylabel('Capacity, Q (Ahr)')
         ax.set_xlabel('Potential vs Li/Li$^{+}$, U (V)')
-
-        for i in dqdu.keys():
-            if solid_line == True:
-                ax2.plot(v, -dqdu[i], label = 'j = {}'.format(i))
-            elif solid_line == False:
-                ax2.plot(v, -dqdu[i], label = 'j = {}'.format(i), ls = '--')
-
-        dqdu_offset = abs(electrode_response[2]).max()
-        text_y_loc = (-electrode_response[2]+dqdu_offset).max() - (error_bar_value/2) * 1.25
-
-        if solid_line == True:
-            ax2.plot(electrode_response[0], -electrode_response[2] + dqdu_offset, label = 'Whole Pos Response', color='k')
-        elif solid_line == False:
-            ax2.plot(electrode_response[0], -electrode_response[2] + dqdu_offset, label = 'Whole Pos Response', color='k', ls='--')
-
-        ax2.errorbar(error_bar_x_vloc, (-electrode_response[2]+dqdu_offset).max() - error_bar_value/2, error_bar_value/2, None, color='k') # vertical lines
-        ax2.errorbar(error_bar_x_hloc, (-electrode_response[2]+dqdu_offset).max() - error_bar_value, None, 0.02, color='k') # horizontal lines
-        ax2.errorbar(error_bar_x_hloc, (-electrode_response[2]+dqdu_offset).max(), None, 0.02, color='k') # horizontal lines
+                
+        ax2.errorbar(error_bar_x_vloc, (-whole_response[2]+dqdu_offset).max() - error_bar_value/2, error_bar_value/2, None, color='k') # vertical lines
+        ax2.errorbar(error_bar_x_hloc, (-whole_response[2]+dqdu_offset).max() - error_bar_value, None, 0.02, color='k') # horizontal lines
+        ax2.errorbar(error_bar_x_hloc, (-whole_response[2]+dqdu_offset).max(), None, 0.02, color='k') # horizontal lines
         ax2.text(x=text_x_loc, y=text_y_loc, s='{} Ahr/V'.format(error_bar_value))
 
         ax2.set_xlabel('Potential vs Li/Li$^{+}$, U (V)')
         ax2.set_ylabel('dQ/dU (Ahr/V)', labelpad = 10)
         ax2.set_yticklabels([])
         ax2.set_yticks([])
-
         return ax, ax2
 
-    elif electrode_response == None:
-        for i in cap.keys():
+    elif electrode_response == False:
+        for i in range(0,nor):
+            cap, dqdu = msmr.individual_reactions(vrange, params[0+(i*3)], params[1+(i*3)], params[2+(i*3)], T)
             if solid_line == True:
-                ax.plot(v, cap[i], label = 'j = {}'.format(i))
+                ax.plot(vrange, cap, label = 'j = {}'.format(i))
+                ax2.plot(v, -dqdu[i], label = 'j = {}'.format(i))
             elif solid_line == False:
-                ax.plot(v, cap[i], label = 'j = {}'.format(i), ls='--')
+                ax.plot(vrange, cap, label = 'j = {}'.format(i), ls='--')
+                ax2.plot(vrange, -dqdu, label = 'j = {}'.format(i), ls = '--')
 
         ax.set_ylabel('Capacity, Q (Ahr)')
         ax.set_xlabel('Potential vs Li/Li$^{+}$, U (V)')
-
-        for i in dqdu.keys():
-            if solid_line == True:
-                ax2.plot(v, -dqdu[i], label = 'j = {}'.format(i))
-            elif solid_line == False:
-                ax2.plot(v, -dqdu[i], label = 'j = {}'.format(i), ls = '--')
-
         ax2.set_xlabel('Potential vs Li/Li$^{+}$, U (V)')
         ax2.set_ylabel('dQ/dU (Ahr/V)', labelpad = 10)
-
-
         return ax, ax2
 
-def plot_parameters_bootstrap(bootstrap_params, electrode, lines=False):
+def plot_all_replicates(cap_lists, voltage_lists, dvdq_lists, labels, cycle_num):
+    fig = plt.figure(figsize = (6,6))
+    ax, ax2, ax3, ax4 = fig.add_subplot(221), fig.add_subplot(222), fig.add_subplot(223), fig.add_subplot(224)
+    for i in (ax, ax2):
+        i.set_xlabel('Capacity (Ahr)')
+        i.set_ylabel('Potential (V)')
+        i.set_xlim(-0.05, 1.5)
+        i.set_ylim(2.4, 4.25)
+    for i in (ax3, ax4):
+        i.set_xlim(3.4, 4.2)
+        i.set_ylim(0,1)
+        i.set_xlabel('Potential (V)')
+        i.set_ylabel('dV/dQ (V/Ahr)')
+    for i in range(0,len(cap_lists[0])):
+        ax.plot(cap_lists[0][i], voltage_lists[0][i], label=labels[i])
+        ax2.plot(cap_lists[1][i], voltage_lists[1][i], label=labels[i])    
+        ax3.plot(voltage_lists[0][i], dvdq_lists[0][i], label=labels[i])
+        ax4.plot(voltage_lists[1][i], dvdq_lists[1][i], label=labels[i])
+    ax.legend(loc=4)
+    ax.set_title('{} Cycles - Charge'.format(cycle_num))
+    ax2.set_title('{} Cycles - Discharge'.format(cycle_num))
+    plt.tight_layout()
+
+def plot_parameters_bootstrap(bootstrap_params, lines=False):
     """
     Takes all bootstrapped parameters and the parameters from the evenly-spaced fit (fit_params) 
     and plots the histograms of each parameter.
 
     Parameters:
     bootstrap_params: All the bootstrap parameters
-    electrode: 'pos' or 'neg'
     lines: If True, will draw a solid vertical line at the median of the histogram, and dashed lines
            at the 5th and 95th percentile of the values, denoting the limits of the 90% confidence
            interval.
 
     """
-    fig = plt.figure(figsize = (9, 15))
+    fig = plt.figure(figsize = (19, 15))
+    main_fig_width = 0.16
     nrow = 6
-    ncol = 3
-    U0_modes, Qj_modes, Wj_modes = [], [], []
+    ncol = 6
+    gs = gridspec.GridSpec(nrow, ncol+1, width_ratios=[main_fig_width, main_fig_width, main_fig_width,
+                                                       1-(main_fig_width*6),
+                                                       main_fig_width, main_fig_width, main_fig_width])
 
-    ax1, ax2, ax3 = fig.add_subplot(nrow,ncol,1) , fig.add_subplot(nrow,ncol,2) , fig.add_subplot(nrow,ncol,3)
-    ax4, ax5, ax6 = fig.add_subplot(nrow,ncol,4) , fig.add_subplot(nrow,ncol,5) , fig.add_subplot(nrow,ncol,6)
-    ax7, ax8, ax9 = fig.add_subplot(nrow,ncol,7) , fig.add_subplot(nrow,ncol,8) , fig.add_subplot(nrow,ncol,9)
-    ax10, ax11, ax12 = fig.add_subplot(nrow,ncol,10) , fig.add_subplot(nrow,ncol,11) , fig.add_subplot(nrow,ncol,12)
-    ax13, ax14, ax15 = fig.add_subplot(nrow,ncol,13) , fig.add_subplot(nrow,ncol,14) , fig.add_subplot(nrow,ncol,15)
-    ax16, ax17, ax18 = fig.add_subplot(nrow,ncol,16) , fig.add_subplot(nrow,ncol,17) , fig.add_subplot(nrow,ncol,18)
+    U0_pos = [fig.add_subplot(gs[i,0]) for i in range(0,nrow)]
+    Qtot_pos = [fig.add_subplot(gs[i,1]) for i in range(0,nrow)]
+    wj_pos = [fig.add_subplot(gs[i,2]) for i in range(0,nrow)]
+    U0_neg = [fig.add_subplot(gs[i,4]) for i in range(0,nrow)]
+    Qtot_neg = [fig.add_subplot(gs[i,5]) for i in range(0,nrow)]
+    wj_neg = [fig.add_subplot(gs[i,6]) for i in range(0,nrow)]
 
-    U0_plots = [ax1, ax4, ax7, ax10, ax13, ax16]
-    Qj_plots = [ax2, ax5, ax8, ax11, ax14, ax17]
-    Wj_plots = [ax3, ax6, ax9, ax12, ax15, ax18]
+    list_of_subplots = [U0_pos, Qtot_pos, wj_pos, U0_neg, Qtot_neg, wj_neg]
+    counts_list = [0, 1, 2, 18, 19, 20]
+    labels_list = [r'$U_{pos}^{0}$ V vs Li/Li$^{+}$', r'$Q_{j,tot,pos}$', r'$\omega_{j,pos}$',
+                   r'$U_{neg}^{0}$ V vs Li/Li$^{+}$', r'$Q_{j,tot,neg}$', r'$\omega_{j,neg}$']
+    lines=True
+    for idx, param in enumerate(list_of_subplots):
+        count = counts_list[idx]
+        for ax in param:
+            bin_count, bin_values, patch = ax.hist(bootstrap_params[:,count], bins=50)
+            if lines==True:
+                lower_percentile = np.percentile(bootstrap_params[:,count], 5)
+                upper_percentile = np.percentile(bootstrap_params[:,count], 95)
+                ax.plot((lower_percentile, lower_percentile), (2.25*bin_count.max()/3, 1000), color='k', ls=':')
+                ax.plot((upper_percentile, upper_percentile), (2.25*bin_count.max()/3, 1000), color='k', ls=':')
+                ax.axvline(x=np.median(bootstrap_params[:,count]), color='k')
+                ax.set_ylim(0, bin_count.max()*1.1)
+            ax.set_xlabel(labels_list[idx], fontsize=12)
+            count += 3
 
-    ax1.set_title('$U^{0}$')
-    ax2.set_title('$Q_{j,max}$')
-    ax3.set_title('$\omega$')
+    wj_pos[0].set_title('(a)', loc='right', fontsize=36, pad=18)
+    wj_neg[0].set_title('(b)', loc='right', fontsize=36, pad=18)
+    #ax5.suptitle('(b)', fontsize=18, loc='right')
 
-    if electrode == 'pos':
-        count_U0 = 0
-        count_Qj = 1
-        count_Wj = 2
-    elif electrode == 'neg':
-        count_U0 = 18
-        count_Qj = 19
-        count_Wj = 20
-    else:
-        raise ValueError
-
-    for ax in U0_plots:
-        bin_count, bin_values, patch = ax.hist(bootstrap_params[:,count_U0], bins = 50)
-        U0_modes.append(bin_values[np.argmax(bin_count)])
-        if lines==True:
-            lower_percentile = np.percentile(bootstrap_params[:,count_U0], 5)
-            upper_percentile = np.percentile(bootstrap_params[:,count_U0], 95)
-            ax.plot((lower_percentile, lower_percentile), (2.25*bin_count.max()/3, 1000), color='k', ls=':')
-            ax.plot((upper_percentile, upper_percentile), (2.25*bin_count.max()/3, 1000), color='k', ls=':')
-            ax.axvline(x=np.median(bootstrap_params[:,count_U0]), color='k')
-            ax.set_ylim(0, bin_count.max()*1.1)
-        ax.set_xlabel('U0')
-        ax.xaxis.set_major_formatter(FormatStrFormatter('%.3f'))
-        count_U0 += 3
-        
-    for ax in Qj_plots:
-        bin_count, bin_values, patch = ax.hist(bootstrap_params[:,count_Qj], bins = 50)
-        Qj_modes.append(bin_values[np.argmax(bin_count)])
-        if lines==True:
-            lower_percentile = np.percentile(bootstrap_params[:,count_Qj], 5)
-            upper_percentile = np.percentile(bootstrap_params[:,count_Qj], 95)
-            ax.plot((lower_percentile, lower_percentile), (2.25*bin_count.max()/3, 1000), color='k', ls=':')
-            ax.plot((upper_percentile, upper_percentile), (2.25*bin_count.max()/3, 1000), color='k', ls=':')
-            ax.axvline(x=np.median(bootstrap_params[:,count_Qj]), color='k')
-            ax.set_ylim(0, bin_count.max()*1.1)
-        ax.set_xlabel('Qj (Ahr)')
-        ax.xaxis.set_major_formatter(FormatStrFormatter('%.3f'))
-        count_Qj += 3
-        
-    for ax in Wj_plots:
-        bin_count, bin_values, patch = ax.hist(bootstrap_params[:,count_Wj], bins = 50)
-        Wj_modes.append(bin_values[np.argmax(bin_count)])
-        if lines==True:
-            lower_percentile = np.percentile(bootstrap_params[:,count_Wj], 5)
-            upper_percentile = np.percentile(bootstrap_params[:,count_Wj], 95)
-            ax.plot((lower_percentile, lower_percentile), (2.25*bin_count.max()/3, 1000), color='k', ls=':')
-            ax.plot((upper_percentile, upper_percentile), (2.25*bin_count.max()/3, 1000), color='k', ls=':')
-            ax.axvline(x=np.median(bootstrap_params[:,count_Wj]), color='k')
-            ax.set_ylim(0, bin_count.max()*1.1)
-        ax.set_xlabel('Wj')
-        ax.xaxis.set_major_formatter(FormatStrFormatter('%.3f'))
-        count_Wj += 3
-    
-    modes_list = np.zeros(len(U0_modes)*3)
-    for i in range(0,len(U0_modes)):
-        modes_list[i*3], modes_list[i*3 + 1], modes_list[i*3 + 2]  = U0_modes[i], Qj_modes[i], Wj_modes[i]
-    
     plt.tight_layout()
 
-    return fig, modes_list
+    return fig
 
 def individual_electrode_analysis(model_results, pos_whole, neg_whole):
     """

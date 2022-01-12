@@ -670,3 +670,129 @@ def upper_v_constraint(parameter_matrix,
 
 
     return full_volt_max - ocv_guess.max()
+
+def bootstrapping_fit(voltage_data, capacity_data, dudq_data, 
+                      full_voltage_data, full_capacity_data, full_dudq_data,
+                      initial_guess, pos_lower_li_limit,
+                      nor_pos, nor_neg,
+                      neg_lower_li_limit, cap_weight, dudq_weight,
+                      N_samples, bootstrap_iterations, bounds, folderpath):
+
+    """
+    Code to run bootstrapping on a dataset by fitting a select number of points dataset picked with random 
+    sampling with replacement. The plots, parameters, and errors for all the iterations are returned.
+
+    voltage_data: Processed voltage data within a select range
+    capacity_data: Processed capacity data within a select voltage range
+    dudq_data: Processed dudq data within a select voltage range
+    full_voltage_data: Voltage data for the whole dataset
+    full_capacity_data: Capacity data for the whole dataset
+    full_dudq_data: dUdQ data for the whole dataset
+    initial_guess: Initial guess of parameters
+    pos_lower_li_limit: Lower lithiation limit of the positive electrode
+    neg_lower_li_limit: Lower lithiation limit of the negative electrode
+    cap_weight: Weight of the capacity fit in the fitting process
+    dudq_weight: Weight of the dUdQ fit in the fitting process
+    N_samples: Number of samples to be randomly selected with replacement
+    bootstrap_iterations: Number of bootstrap iterations to run
+    bounds: Bounds for all the parameters in the fit
+    folderpath: Directory to store data
+
+
+    """
+
+    for k in range(1,bootstrap_iterations+1):
+        bootstrap_voltage, bootstrap_capacity, bootstrap_dudq = np.zeros(N_samples), np.zeros(N_samples), np.zeros(N_samples)
+
+        for i in range(0, N_samples):
+            idx_generator = np.arange(0,len(voltage_data))
+            idx = np.random.choice(idx_generator, replace=True)
+            bootstrap_voltage[i] = voltage_data[idx]
+            bootstrap_capacity[i] = capacity_data[idx]
+            bootstrap_dudq[i] = dudq_data[idx]
+
+            sorted_voltage_order = bootstrap_voltage.argsort()
+            sorted_voltage = bootstrap_voltage[sorted_voltage_order[::1]]
+            sorted_capacity = bootstrap_capacity[sorted_voltage_order[::1]]
+            sorted_dudq = bootstrap_dudq[sorted_voltage_order[::1]]
+
+        yvolt_bs=fmin_slsqp(func=verbrugge_whole_cell_opt, x0=initial_guess, 
+                            args=(sorted_voltage,             # interpolated voltage range
+                                  sorted_capacity,       # interpolated capacity data
+                                  sorted_dudq,     # interpolated dudq data
+                                  full_voltage_data.min(),   # Minimum voltage
+                                  full_voltage_data.max(),   # Maximum voltage
+                                  298,                       # temperature
+                                  nor_pos, nor_neg,          # number of pos rxns, number of neg rxns
+                                  (3.4,5), (0,1),            # positive voltage range, negative voltange range
+                                  pos_lower_li_limit,
+                                  neg_lower_li_limit,        # positive | neg lower X or Q limit
+                                  None,                      # N|P Ratio
+                                  None,                      # positive electrode full capacity
+                                  full_capacity_data.max(),  # usable/cyclable capacity within the voltage limits
+                                  'Qj', 'MAE',              # Qj or Xj
+                                  None,                      # list of pos_U0s
+                                  None,                      # list of neg_U0s
+                                  False,                     # fixed voltage
+                                  True,                      # fixed xj_limit
+                                  cap_weight, dudq_weight),                 # capacity vs dudq weight on error function
+                            eqcons=[lower_v_constraint, upper_v_constraint],
+                            bounds=bounds, iter=500, full_output=False)
+
+        guess_full_bs = yvolt_bs[0:(3*(nor_pos+nor_neg))]
+
+        cap_bs, v_bs, dqdu_bs, dudq_bs = whole_cell(guess_full_bs, nor_pos = nor_pos, nor_neg = nor_neg,
+                                                    pos_lower_li_limit = pos_lower_li_limit, neg_lower_li_limit=neg_lower_li_limit,
+                                                    temp = 298, pos_volt_range = (3.4, 5), 
+                                                    neg_volt_range = (0, 1), p_capacity=None, n_p=None,
+                                                    usable_cap = full_capacity_data.max(), Qj_or_Xj='Qj')
+        
+        capacity_range = np.linspace(0.0, full_capacity_data.max(), 251)
+        fit_bs_mae = mae(full_voltage_data, v_bs, cap_bs, full_capacity_data, capacity_range)
+
+
+        deriv_list = [(v_bs, dudq_bs)]
+    
+        newvrange = np.linspace(voltage_data.min(), voltage_data.max(), 1000)
+        for item in deriv_list:
+            if item[0].max() > 4.15:
+                v_range = newvrange
+            else:
+                v_range = np.linspace(voltage_data.min(), item[0].max(), 1000)
+        fit_bs_mae_dudq = mae(full_dudq_data, -(item[1]), item[0], full_voltage_data, v_range)
+
+        fig = plt.figure(figsize = (8,4))
+        ax = fig.add_subplot(121)
+        ax2 = fig.add_subplot(122)
+
+        ax.plot(full_capacity_data, full_voltage_data, label='Data')
+        ax.plot(cap_bs, v_bs)
+        ax2.plot(full_voltage_data, full_dudq_data, label='Data')
+        ax2.plot(v_bs, -dudq_bs)
+              
+        ax.set_xlabel('Capacity (Ahr)')
+        ax.set_ylabel('Potential (V)')
+        ax.text(.05, 2.52, 'MAE=%1.3f V' %fit_bs_mae)
+
+        ax2.set_xlabel('Potential (V)')
+        ax2.set_ylabel('dU/dQ (V $Ahr^{-1}$')
+        ax2.set_xlim(3.4, 4.25)
+        ax2.set_ylim(0, 1)
+        ax2.text(3.85, 0.02, 'MAE=%1.4f V/Ahr' %fit_bs_mae_dudq)
+
+        plt.tight_layout()
+
+        try:
+            fig.savefig(folderpath+'/graphs/graph_of_fits_{}.png'.format(int(k)), dpi=100)
+        except FileNotFoundError:
+            os.mkdir(folderpath+'/graphs/')
+            fig.savefig(folderpath+'/graphs/graph_of_fits_{}.png'.format(int(k)), dpi=100)
+        fit_bs_data = np.append(guess_full_bs, (fit_bs_mae, fit_bs_mae_dudq))
+        bootstrap_data = np.vstack((np.round(sorted_voltage,4), np.round(sorted_capacity, 4), np.round(sorted_dudq , 4)))
+        try:    
+            np.savetxt(folderpath+'/params_and_errors/params_and_errors_of_fit_{}.csv'.format(int(k)), fit_bs_data)
+            np.savetxt(folderpath+'/params_and_errors/random_sampled_data_{}.csv'.format(int(k)), bootstrap_data, delimiter=',')
+        except FileNotFoundError:
+            os.mkdir(folderpath+'/params_and_errors/')
+            np.savetxt(folderpath+'/params_and_errors/params_and_errors_of_fit_{}.csv'.format(int(k)), fit_bs_data)
+            np.savetxt(folderpath+'/params_and_errors/random_sampled_data_{}.csv'.format(int(k)), bootstrap_data, delimiter=',')
