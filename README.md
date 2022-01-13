@@ -5,6 +5,7 @@ This whole cell adaption of the thermodynamic framework of the Multi-Species, Mu
 For further information or if this code is used, please go to or cite the following paper:
 
 * Paper citation will be available upon acceptance *
+* The preprint manuscript is currently available on [ECSarXiv](https://ecsarxiv.org/b8ge2/) (DOI: 10.1149/osf.io/b8ge2)
 
 ----------------------------------------------------------------
 ### Software Dependencies
@@ -29,10 +30,11 @@ The conda environment used for this work can be recreated with the following com
 needed for importing, analyzing, and compiling the data into the manuscruipt and supplementary figures. The User Guide
 provides a short tutorial on how to use the software to fit differential voltage using the MSMR model.
 
-*supplementary-files*: This folder contains the experimental open-circuit voltage data and the summary of the bootstrapped
-data needed for the analysis performed in this manuscript.
+*supplementary-files*: This folder contains the experimental open-circuit voltage data, parameters for all fits, and the 
+summary of the bootstrapped data needed for the analysis performed in this manuscript.
 
-*figures*: This folder contains all the figures used in the manuscript and the subsequent Supplementary Information.
+*figures*: This folder contains all the figures used in the manuscript and the subsequent Supplementary Information. All
+main figures have PNG, EPS, and PDF formats available.
 
 
 ----------------------------------------------------------------
